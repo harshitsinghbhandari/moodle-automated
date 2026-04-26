@@ -1,66 +1,110 @@
-<img src="https://r2.browser-use.com/github/ajsdlasnnalsgasld.png" alt="Browser Harness" width="100%" />
+# moodle-automated
 
-# Browser Harness ♞
+Personal automation for [IITB Moodle](https://moodle.iitb.ac.in) — grades, announcements, submissions, and more. Built on top of [browser-harness](https://github.com/browser-use/browser-harness) (CDP control of a real Chrome session).
 
-The simplest, thinnest, **self-healing** harness that gives LLM **complete freedom** to complete any browser task. Built directly on CDP.
+## What it does
 
-The agent writes what's missing, mid-task. No framework, no recipes, no rails. One websocket to Chrome, nothing between.
+```python
+from moodle.moodle import *
 
-```
-  ● agent: wants to upload a file
-  │
-  ● helpers.py → upload_file() missing
-  │
-  ● agent edits the harness and writes it    helpers.py   192 → 199 lines
-  │                                                       + upload_file()
-  ✓ file uploaded
-```
-
-**You will never use the browser again.**
-
-## Setup prompt
-
-Paste into Claude Code or Codex:
-
-```text
-Set up https://github.com/browser-use/browser-harness for me.
-
-Read `install.md` first to install and connect this repo to my real browser. Then read `SKILL.md` for normal usage. Always read `helpers.py` because that is where the functions are. When you open a setup or verification tab, activate it so I can see the active browser tab. After it is installed, open this repository in my browser and, if I am logged in to GitHub, ask me whether you should star it for me as a quick demo that the interaction works — only click the star if I say yes. If I am not logged in, just go to browser-use.com.
+connect()
+grades("data analytics")           # parsed grade table, clean dicts
+announcements("feedback", n=5)     # latest posts from any course forum
+download_submission("IE 201", "lab 02")  # download your submitted files
+courses()                          # all enrolled courses with IDs
+all_grades()                       # overview grades across every semester
+post_discord(fmt_grades(...))      # push to Discord webhook
 ```
 
-When this page appears, tick the checkbox so the agent can connect to your browser:
+No selenium. No playwright. No headless browser. Connects to your real logged-in Chrome via CDP.
 
-<img src="docs/setup-remote-debugging.png" alt="Remote debugging setup" width="520" style="border-radius: 12px;" />
+## Setup
 
-See [domain-skills/](domain-skills/) for example tasks.
+**1. Clone and install**
 
-## Free remote browsers
+```bash
+git clone https://github.com/harshitsinghbhandari/moodle-automated.git
+cd moodle-automated
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
 
-Useful for stealth, sub-agents, or deployment.<br>
-**Free tier: 3 concurrent browsers, proxies, captcha solving, and more. No card required.**
+**2. Launch Chrome with the debug profile**
 
-- Grab a key at [cloud.browser-use.com/new-api-key](https://cloud.browser-use.com/new-api-key)
-- Or let the agent sign up itself via [docs.browser-use.com/llms.txt](https://docs.browser-use.com/llms.txt) (setup flow + challenge context included).
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --user-data-dir="$HOME/chrome-debug-moodle" \
+  --remote-debugging-port=9222 \
+  --remote-allow-origins="*" \
+  --no-first-run
+```
 
-## How simple is it? (~592 lines of Python)
+Log into Moodle in this browser. The session persists across restarts.
 
-- `install.md` — first-time install and browser bootstrap
-- `SKILL.md` — day-to-day usage
-- `run.py` (~36 lines) — runs plain Python with helpers preloaded
-- `helpers.py` (~195 lines) — starting tool calls; the agent edits these
-- `admin.py` + `daemon.py` (~361 lines) — daemon bootstrap plus the CDP websocket and socket bridge
+**3. Configure `.env`** (optional, for Discord)
 
-## Contributing
+```bash
+cp .env.example .env
+# Add your webhook URL:
+# DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
 
-PRs and improvements welcome. The best way to help: **contribute a new domain skill** under [domain-skills/](domain-skills/) for a site or task you use often (LinkedIn outreach, ordering on Amazon, filing expenses, etc.). Each skill teaches the agent the selectors, flows, and edge cases it would otherwise have to rediscover.
+**4. Use it**
 
-- **Skills are written by the harness, not by you.** Just run your task with the agent — when it figures something non-obvious out, it files the skill itself (see [SKILL.md](SKILL.md)). Please don't hand-author skill files; agent-generated ones reflect what actually works in the browser.
-- Open a PR with the generated `domain-skills/<site>/` folder — small and focused is great.
-- Bug fixes, docs tweaks, and helper improvements are equally welcome.
-- Browse existing skills (`github/`, `linkedin/`, `amazon/`, ...) to see the shape.
+```python
+from moodle.moodle import *
 
-If you're not sure where to start, open an issue and we'll point you somewhere useful.
+connect()  # auto-detects Chrome on port 9222
 
----
+# Check grades
+g = grades("data analytics")
+print(fmt_grades(g, "Data Analytics"))
 
-[The Bitter Lesson of Agent Harnesses](https://browser-use.com/posts/bitter-lesson-agent-harnesses) · [Web Agents That Actually Learn](https://browser-use.com/posts/web-agents-that-actually-learn)
+# Get latest announcements
+anns = announcements("optimization modeling", n=5)
+print(fmt_announcements(anns))
+
+# Download a submission
+files = download_submission("IE 201", "lab 02")
+
+# Post anything to Discord
+post_discord(fmt_grades(g, "Data Analytics"))
+```
+
+## API
+
+| Function | Description |
+|----------|-------------|
+| `connect()` | Connect to Chrome on port 9222, start the CDP daemon |
+| `courses()` | List all enrolled courses `[{id, name}, ...]` |
+| `open_course(query)` | Navigate to a course by ID or name substring |
+| `grades(query)` | Get parsed grades for a course |
+| `all_grades()` | Overview grades for all courses, all semesters |
+| `activities(query)` | List assignments/forums/resources on a course page |
+| `announcements(query, n=5)` | Get latest n announcements from a course forum |
+| `download_submission(course, assignment)` | Download submitted files to `downloads/` |
+| `screenshot(path)` | Screenshot the current page |
+| `post_discord(msg)` | Post to Discord webhook from `.env` |
+| `fmt_grades(grades, name)` | Format grades for display |
+| `fmt_announcements(anns, name)` | Format announcements for display |
+
+All functions that take a course accept an **int ID**, **string ID**, or **name substring** (case-insensitive).
+
+## Project structure
+
+```
+moodle/
+  moodle.py        — all the Moodle-specific functions
+  navigation.md    — selectors, URL patterns, course ID table, traps
+helpers.py         — low-level CDP primitives (click, type, screenshot, etc.)
+daemon.py          — CDP websocket bridge
+admin.py           — daemon lifecycle management
+domain-skills/     — browser-harness skills for other sites
+.env               — secrets (gitignored)
+downloads/         — downloaded submissions (gitignored)
+```
+
+## Built on
+
+[browser-harness](https://github.com/browser-use/browser-harness) — direct CDP control of a real browser, ~600 lines of Python.
